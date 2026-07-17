@@ -8,3 +8,4 @@ dist/
 ~/.lazy-moa/
 config.yaml
 config.yml
+.github/workflows/

@@ -12,7 +12,8 @@ import { SemanticMemory } from "./memory.js";
 import { executeCommittee } from "./moa.js";
 import { compressContext } from "./compressor.js";
 import { applyCacheControl } from "./cacheControl.js";
-import { chat, chatRaw, chatStream } from "./llmClient.js";
+import { chat, chatRaw, chatStream, callWithFallback } from "./llmClient.js";
+import { stream as honoStream } from "hono/streaming";
 
 let config: AppConfig | null = null;
 let experience: ExperienceEngine | null = null;
@@ -84,6 +85,43 @@ app.post("/v1/chat/completions", async (c) => {
   const strategy = experience?.lookup(rs.taskType);
   let usedCommittee = false;
   let modelUsed = "";
+  const trigger = rs.committeeScore >= config.committee.triggerThreshold;
+
+  // True streaming: for simple requests that don't need committee/judge, pass through SSE directly
+  const needsDecision = !hasTools && rs.committeeScore > 0.4 && rs.committeeScore < config.committee.triggerThreshold;
+  const willCommittee = (strategy?.isReliable && strategy.committee) || (trigger && withinBudget() && !hasTools);
+  
+  if (stream && !willCommittee && !needsDecision) {
+    const tierModel = config.models[config.tiers[rs.tier] || "cheap"];
+    modelUsed = tierModel.name;
+    messages = applyAdaptivePrompt(messages, rs.tier);
+    messages = applyCacheControl(messages, tierModel);
+    experience?.record(rs.taskType, userInput, modelUsed, false, true);
+    
+    c.header("Content-Type", "text/event-stream");
+    return honoStream(c, async (stream) => {
+      const body2: any = { model: tierModel.model, messages, stream: true };
+      if (body.temperature) body2.temperature = body.temperature;
+      if (body.max_tokens) body2.max_tokens = body.max_tokens;
+      const resp = await fetch(`${tierModel.baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${tierModel.apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body2),
+      });
+      if (!resp.ok || !resp.body) {
+        await stream.write(`data: ${JSON.stringify({ error: { message: "Upstream error" } })}\n\n`);
+        return;
+      }
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        await stream.write(decoder.decode(value));
+      }
+      await stream.write("data: [DONE]\n\n");
+    });
+  }
 
   try {
     if (strategy?.isReliable && !hasTools) {
@@ -138,7 +176,10 @@ app.post("/v1/chat/completions", async (c) => {
 // ─── Helpers ───
 async function runSingle(model: ModelConfig, messages: any[], body: any, stream: boolean, tier: string): Promise<string | any> {
   messages = applyAdaptivePrompt(messages, tier);
-  if (stream) return chatStream(model, messages, { temperature: body.temperature, maxTokens: body.max_tokens });
+  if (stream) {
+    // Collect streaming output (used when Judge check is needed)
+    return chatStream(model, messages, { temperature: body.temperature, maxTokens: body.max_tokens });
+  }
   messages = applyCacheControl(messages, model);
   if (body.tools) return chatRaw(model, body);
   const extra: any = {};

@@ -36,7 +36,32 @@ export ANTHROPIC_BASE_URL=http://127.0.0.1:8080
 ```
 
 ```bash
+# Cursor: Settings → Models → OpenAI Base URL
+# Base URL: http://127.0.0.1:8080/v1
+# API Key: none
+# Model: auto
+```
+
+```python
+# AutoGen
+config_list = [{"base_url": "http://127.0.0.1:8080/v1", "api_key": "none", "model": "auto"}]
+```
+
+```yaml
+# Hermes (~/.hermes/config.yaml)
+model:
+  default: auto
+  provider: custom
+custom_providers:
+  - name: lazy-moa
+    base_url: http://127.0.0.1:8080/v1
+    api_key: "none"
+    model: auto
+```
+
+```bash
 # curl
+
 curl http://127.0.0.1:8080/v1/chat/completions \
   -d '{"messages":[{"role":"user","content":"Hello"}]}'
 ```
