@@ -36,6 +36,7 @@ const CODE = [
   "```","def ","function ","class ","import ","const ","let ",
   "var ","public ","private ","SELECT ","INSERT ","CREATE TABLE",
   "async ","await ","return ","if ","for ","while ",
+  "算法","排序","复杂度","架构","设计","分析","比较",
 ];
 
 export function score(inputText: string, hasTools = false): RiskScore {
@@ -64,9 +65,9 @@ export function score(inputText: string, hasTools = false): RiskScore {
 }
 
 function classifyTier(complexity: number, risk: number): RiskScore["tier"] {
-  if (risk > 0.6) return "C3";
-  if (complexity > 0.7) return risk < 0.3 ? "C2" : "C3";
-  if (complexity > 0.3) return "C1";
+  if (risk > 0.3) return "C3";
+  if (complexity > 0.5) return risk < 0.2 ? "C2" : "C3";
+  if (complexity > 0.2) return "C1";
   return "C0";
 }
 

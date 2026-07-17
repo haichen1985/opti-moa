@@ -72,10 +72,13 @@ app.post("/v1/chat/completions", async (c) => {
     body.messages = messages;
   }
 
-  // Memory recall
+  // Memory recall (non-blocking, skip on failure/timeout)
   if (memory && !hasTools) {
     try {
-      const recalled = await memory.recall(userInput, "L0", 3);
+      const recalled = await Promise.race([
+        memory.recall(userInput, "L0", 3),
+        new Promise<never[]>((_, rej) => setTimeout(() => rej(new Error("timeout")), 3000)),
+      ]);
       const recallText = recalled.filter((r) => r.score > 0.5).map((r) => `[Relevant past context] ${r.content.slice(0, 300)}`).join("\n\n");
       if (recallText) messages.unshift({ role: "system", content: recallText });
     } catch {}
@@ -148,8 +151,8 @@ app.post("/v1/chat/completions", async (c) => {
     modelUsed = tierModel.name;
     let resultText = await runSingle(tierModel, messages, body, stream, rs.tier);
 
-    // OptiMoa
-    if (!hasTools && !stream && rs.committeeScore > 0.4 && rs.committeeScore < config.committee.triggerThreshold && withinBudget()) {
+    // OptiMoa: only for borderline cases (C1-C2), skip Judge for C3 (too slow)
+    if (!hasTools && !stream && rs.tier !== "C3" && rs.committeeScore > 0.3 && rs.committeeScore < config.committee.triggerThreshold && withinBudget()) {
       const j = await judge(userInput, resultText, config.models[config.judgeModel], config.judgeConfidenceThreshold);
       if (j.shouldEscalate) {
         const { text } = await runCommittee(messages);
