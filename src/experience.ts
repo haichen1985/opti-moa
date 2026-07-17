@@ -8,6 +8,7 @@ export interface BestStrategy {
   model: string;
   committee: boolean;
   successRate: number;
+  avgQuality: number;
   avgCost: number;
   sampleCount: number;
   confidence: number;
@@ -52,9 +53,9 @@ export class ExperienceEngine {
 
   lookup(taskType: string): BestStrategy | null {
     const row = this.db.prepare(
-      `SELECT model, committee, AVG(success) as sr, AVG(token_cost) as ac, COUNT(*) as sc
+      `SELECT model, committee, AVG(success) as sr, AVG(quality_score) as qs, AVG(token_cost) as ac, COUNT(*) as sc
        FROM decisions WHERE task_type = ? GROUP BY model, committee
-       ORDER BY sr DESC, ac ASC LIMIT 1`
+       ORDER BY qs DESC, sr DESC, ac ASC LIMIT 1`
     ).get(taskType) as any;
     if (!row) return null;
     const confidence = (row.sr || 0) * Math.min(row.sc / 10, 1);
@@ -62,23 +63,26 @@ export class ExperienceEngine {
       model: row.model,
       committee: Boolean(row.committee),
       successRate: row.sr || 0,
+      avgQuality: row.qs || 0,
       avgCost: row.ac || 0,
       sampleCount: row.sc,
       confidence,
-      get isReliable() { return this.sampleCount >= 3 && this.successRate >= 0.85; },
+      get isReliable() { return this.sampleCount >= 3 && this.successRate >= 0.85 && this.avgQuality >= 0.7; },
     };
   }
 
   getStats(): any {
     const total = (this.db.prepare("SELECT COUNT(*) as c FROM decisions").get() as any).c;
     const moa = (this.db.prepare("SELECT COUNT(*) as c FROM decisions WHERE committee = 1").get() as any).c;
+    const avgQ = (this.db.prepare("SELECT AVG(quality_score) as q FROM decisions WHERE quality_score IS NOT NULL").get() as any).q;
     const byTask = this.db.prepare(
-      "SELECT task_type as t, COUNT(*) as c, AVG(success) as sr FROM decisions GROUP BY task_type ORDER BY c DESC"
+      "SELECT task_type as t, COUNT(*) as c, AVG(success) as sr, AVG(quality_score) as qs FROM decisions GROUP BY task_type ORDER BY c DESC"
     ).all() as any[];
     return {
       totalDecisions: total,
       moaInvocations: moa,
-      byTask: byTask.map((r) => ({ task: r.t, count: r.c, successRate: r.sr })),
+      avgQuality: avgQ ? Number(avgQ.toFixed(3)) : 0,
+      byTask: byTask.map((r) => ({ task: r.t, count: r.c, successRate: r.sr, avgQuality: r.qs ? Number(r.qs.toFixed(3)) : null })),
     };
   }
 }

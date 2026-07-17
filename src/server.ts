@@ -142,9 +142,11 @@ app.post("/v1/chat/completions", async (c) => {
       if (strategy.committee && withinBudget()) {
         const { text } = await runCommittee(messages);
         usedCommittee = true;
+        recordOutcome(rs.taskType, userInput, modelUsed, true, text, rs.tier, hasTools, stream);
         return c.json(makeResponse(text, modelUsed));
       } else {
         const text = await runSingle(config.models[strategy.model], messages, body, stream, rs.tier);
+        recordOutcome(rs.taskType, userInput, modelUsed, false, text, rs.tier, hasTools, stream);
         return c.json(makeResponse(text, modelUsed));
       }
     }
@@ -153,6 +155,7 @@ app.post("/v1/chat/completions", async (c) => {
       const { text } = await runCommittee(messages);
       usedCommittee = true;
       modelUsed = config.committee.aggregator;
+      recordOutcome(rs.taskType, userInput, modelUsed, true, text, rs.tier, hasTools, stream);
       return c.json(makeResponse(text, modelUsed));
     }
 
@@ -160,7 +163,7 @@ app.post("/v1/chat/completions", async (c) => {
     modelUsed = tierModel.name;
     let resultText = await runSingle(tierModel, messages, body, stream, rs.tier);
 
-    // OptiMoa: only for borderline cases (C1-C2), skip Judge for C3 (too slow)
+    // Judge escalation for borderline cases (C1-C2), skip C3 (too slow)
     if (!hasTools && !stream && rs.tier !== "C3" && rs.committeeScore > 0.3 && rs.committeeScore < config.committee.triggerThreshold && withinBudget()) {
       const j = await judge(userInput, resultText, config.models[config.judgeModel], config.judgeConfidenceThreshold);
       if (j.shouldEscalate) {
@@ -171,14 +174,8 @@ app.post("/v1/chat/completions", async (c) => {
       }
     }
 
-    // Record experience with actual success (non-empty result)
     requestSuccess = !!(resultText && (typeof resultText === "string" ? resultText.trim() : true));
-    experience?.record(rs.taskType, userInput, modelUsed, usedCommittee, requestSuccess);
-
-    // Store memory
-    if (memory && !hasTools && !stream && requestSuccess) {
-      try { await memory.storeConversation(userInput, resultText, rs.taskType); } catch {}
-    }
+    recordOutcome(rs.taskType, userInput, modelUsed, usedCommittee, resultText, rs.tier, hasTools, stream);
 
     return c.json(makeResponse(resultText, modelUsed));
   } catch (e: any) {
@@ -233,6 +230,43 @@ function applyAdaptivePrompt(messages: any[], tier: string): any[] {
     messages.unshift({ role: "system", content: prompt });
   }
   return messages;
+}
+
+// ─── Async quality scoring (fire-and-forget, does not block user response) ───
+function recordOutcome(
+  taskType: string, input: string, model: string, committee: boolean,
+  result: string | any, tier: string, hasTools: boolean, stream: boolean
+) {
+  const success = !!(result && (typeof result === "string" ? result.trim() : true));
+  const resultStr = typeof result === "string" ? result : "";
+
+  // For non-trivial requests (C1-C3): run Judge in background for real quality scoring
+  if (!hasTools && !stream && tier !== "C0" && success && config) {
+    setImmediate(async () => {
+      try {
+        const j = await judge(input, resultStr, config!.models[config!.judgeModel], config!.judgeConfidenceThreshold);
+        const quality = j.confidence;
+        experience?.record(taskType, input, model, committee, quality >= 0.6, quality);
+        if (memory && quality >= 0.5) {
+          try { await memory.storeConversation(input, resultStr, taskType); } catch {}
+        }
+      } catch {
+        // Judge failed: record with basic success
+        experience?.record(taskType, input, model, committee, success, 0.5);
+        if (memory && success) {
+          try { await memory.storeConversation(input, resultStr, taskType); } catch {}
+        }
+      }
+    });
+  } else {
+    // C0 chitchat or tool/stream: just record basic success
+    experience?.record(taskType, input, model, committee, success);
+    if (memory && !hasTools && !stream && success) {
+      setImmediate(async () => {
+        try { await memory.storeConversation(input, resultStr, taskType); } catch {}
+      });
+    }
+  }
 }
 
 // ─── Stats endpoints ───
