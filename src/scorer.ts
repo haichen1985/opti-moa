@@ -36,7 +36,7 @@ const CODE = [
   "```","def ","function ","class ","import ","const ","let ",
   "var ","public ","private ","SELECT ","INSERT ","CREATE TABLE",
   "async ","await ","return ","if ","for ","while ",
-  "算法","排序","复杂度","架构","设计","分析","比较",
+  "算法","排序","复杂度","代码","编程","sql","bug",
 ];
 
 export function score(inputText: string, hasTools = false): RiskScore {

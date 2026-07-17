@@ -76,20 +76,6 @@ export function resolveEnvVars(obj: any): any {
   return obj;
 }
 
-// snake_case → camelCase bridge for YAML config
-function snakeToCamel(obj: any): any {
-  if (Array.isArray(obj)) return obj.map(snakeToCamel);
-  if (obj && typeof obj === "object") {
-    const out: any = {};
-    for (const [k, v] of Object.entries(obj)) {
-      const key = k.replace(/_./g, (m) => m[1].toUpperCase());
-      out[key] = snakeToCamel(v);
-    }
-    return out;
-  }
-  return obj;
-}
-
 export function loadConfig(path: string): AppConfig {
   const raw = yaml.load(readFileSync(path, "utf-8")) as any;
   const resolved = resolveEnvVars(raw);

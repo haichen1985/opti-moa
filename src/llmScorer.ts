@@ -42,6 +42,7 @@ export function mergeScores(keyword: RiskScore, llm: LLMScore): RiskScore {
   const multiView = keyword.multiView * 0.3 + llm.multiView * 0.7;
   let committeeScore = complexity * 0.2 + risk * 0.35 + uncertainty * 0.25 + multiView * 0.2;
   if (keyword.hasTools) committeeScore = 0;
-  const tier = risk > 0.6 ? "C3" : complexity > 0.7 ? (risk < 0.3 ? "C2" : "C3") : complexity > 0.3 ? "C1" : "C0";
+  // Consistent with scorer.ts classifyTier thresholds
+  const tier = risk > 0.3 ? "C3" : complexity > 0.5 ? (risk < 0.2 ? "C2" : "C3") : complexity > 0.2 ? "C1" : "C0";
   return { complexity, risk, uncertainty, multiView, committeeScore, tier: tier as RiskScore["tier"], taskType: llm.taskType !== "general" ? llm.taskType : keyword.taskType, hasTools: keyword.hasTools };
 }

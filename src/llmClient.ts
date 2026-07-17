@@ -8,6 +8,42 @@ export interface LLMResponse {
   model: string;
 }
 
+const DEFAULT_TIMEOUT = 30_000;
+const STREAM_TIMEOUT = 60_000;
+const MAX_RETRIES = 1;
+
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit,
+  timeoutMs: number,
+  retries = MAX_RETRIES
+): Promise<Response> {
+  let lastErr: Error | null = null;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+      const resp = await fetch(url, { ...options, signal: ctrl.signal });
+      clearTimeout(timer);
+      // Retry on 5xx or 429
+      if (resp.status >= 500 || resp.status === 429) {
+        if (attempt < retries) {
+          await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+          continue;
+        }
+      }
+      return resp;
+    } catch (e: any) {
+      lastErr = e;
+      if (attempt < retries) {
+        await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+        continue;
+      }
+    }
+  }
+  throw lastErr || new Error("fetch failed");
+}
+
 export async function chat(
   model: ModelConfig,
   messages: any[],
@@ -19,14 +55,18 @@ export async function chat(
   if (opts.maxTokens !== undefined) body.max_tokens = opts.maxTokens;
   if (opts.extra) Object.assign(body, opts.extra);
 
-  const resp = await fetch(`${model.baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${model.apiKey}`,
-      "Content-Type": "application/json",
+  const resp = await fetchWithTimeout(
+    `${model.baseUrl}/chat/completions`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${model.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-  });
+    DEFAULT_TIMEOUT
+  );
   if (!resp.ok) throw new Error(`LLM error ${resp.status}: ${await resp.text()}`);
   const data: any = await resp.json();
   const latency = performance.now() - start;
@@ -48,14 +88,18 @@ export async function chat(
 }
 
 export async function chatRaw(model: ModelConfig, body: any): Promise<any> {
-  const resp = await fetch(`${model.baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${model.apiKey}`,
-      "Content-Type": "application/json",
+  const resp = await fetchWithTimeout(
+    `${model.baseUrl}/chat/completions`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${model.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ ...body, model: model.model }),
     },
-    body: JSON.stringify({ ...body, model: model.model }),
-  });
+    DEFAULT_TIMEOUT
+  );
   if (!resp.ok) throw new Error(`LLM error ${resp.status}`);
   return resp.json();
 }
@@ -69,14 +113,18 @@ export async function chatStream(
   if (opts.temperature !== undefined) body.temperature = opts.temperature;
   if (opts.maxTokens !== undefined) body.max_tokens = opts.maxTokens;
 
-  const resp = await fetch(`${model.baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${model.apiKey}`,
-      "Content-Type": "application/json",
+  const resp = await fetchWithTimeout(
+    `${model.baseUrl}/chat/completions`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${model.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-  });
+    STREAM_TIMEOUT
+  );
   if (!resp.ok || !resp.body) throw new Error(`Stream error ${resp.status}`);
 
   const text = await resp.text();
@@ -101,14 +149,18 @@ export async function getEmbeddings(
   text: string
 ): Promise<number[] | null> {
   try {
-    const resp = await fetch(`${baseUrl}/embeddings`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
+    const resp = await fetchWithTimeout(
+      `${baseUrl}/embeddings`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ model, input: text.slice(0, 8000) }),
       },
-      body: JSON.stringify({ model, input: text.slice(0, 8000) }),
-    });
+      DEFAULT_TIMEOUT
+    );
     if (!resp.ok) return null;
     const data: any = await resp.json();
     return data.data?.[0]?.embedding || null;

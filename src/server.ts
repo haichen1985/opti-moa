@@ -12,7 +12,7 @@ import { SemanticMemory } from "./memory.js";
 import { executeCommittee } from "./moa.js";
 import { compressContext } from "./compressor.js";
 import { applyCacheControl } from "./cacheControl.js";
-import { chat, chatRaw, chatStream, callWithFallback } from "./llmClient.js";
+import { chat, chatRaw, chatStream } from "./llmClient.js";
 import { stream as honoStream } from "hono/streaming";
 
 let config: AppConfig | null = null;
@@ -88,6 +88,7 @@ app.post("/v1/chat/completions", async (c) => {
   const strategy = experience?.lookup(rs.taskType);
   let usedCommittee = false;
   let modelUsed = "";
+  let requestSuccess = true;
   const trigger = rs.committeeScore >= config.committee.triggerThreshold;
 
   // True streaming: for simple requests that don't need committee/judge, pass through SSE directly
@@ -100,29 +101,38 @@ app.post("/v1/chat/completions", async (c) => {
     messages = applyAdaptivePrompt(messages, rs.tier);
     messages = applyCacheControl(messages, tierModel);
     experience?.record(rs.taskType, userInput, modelUsed, false, true);
-    
+
     c.header("Content-Type", "text/event-stream");
     return honoStream(c, async (stream) => {
-      const body2: any = { model: tierModel.model, messages, stream: true };
-      if (body.temperature) body2.temperature = body.temperature;
-      if (body.max_tokens) body2.max_tokens = body.max_tokens;
-      const resp = await fetch(`${tierModel.baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${tierModel.apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify(body2),
-      });
-      if (!resp.ok || !resp.body) {
-        await stream.write(`data: ${JSON.stringify({ error: { message: "Upstream error" } })}\n\n`);
-        return;
+      try {
+        const body2: any = { model: tierModel.model, messages, stream: true };
+        if (body.temperature) body2.temperature = body.temperature;
+        if (body.max_tokens) body2.max_tokens = body.max_tokens;
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 60_000);
+        const resp = await fetch(`${tierModel.baseUrl}/chat/completions`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${tierModel.apiKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify(body2),
+          signal: ctrl.signal,
+        });
+        clearTimeout(timer);
+        if (!resp.ok || !resp.body) {
+          await stream.write(`data: ${JSON.stringify({ error: { message: "Upstream error" } })}\n\n`);
+          return;
+        }
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          await stream.write(decoder.decode(value));
+        }
+        await stream.write("data: [DONE]\n\n");
+      } catch (e: any) {
+        await stream.write(`data: ${JSON.stringify({ error: { message: String(e.message || e) } })}\n\n`);
+        await stream.write("data: [DONE]\n\n");
       }
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        await stream.write(decoder.decode(value));
-      }
-      await stream.write("data: [DONE]\n\n");
     });
   }
 
@@ -139,7 +149,6 @@ app.post("/v1/chat/completions", async (c) => {
       }
     }
 
-    const trigger = rs.committeeScore >= config.committee.triggerThreshold;
     if (trigger && withinBudget() && !hasTools) {
       const { text } = await runCommittee(messages);
       usedCommittee = true;
@@ -162,16 +171,19 @@ app.post("/v1/chat/completions", async (c) => {
       }
     }
 
-    // Record experience
-    experience?.record(rs.taskType, userInput, modelUsed, usedCommittee, true);
+    // Record experience with actual success (non-empty result)
+    requestSuccess = !!(resultText && (typeof resultText === "string" ? resultText.trim() : true));
+    experience?.record(rs.taskType, userInput, modelUsed, usedCommittee, requestSuccess);
 
     // Store memory
-    if (memory && !hasTools && !stream) {
+    if (memory && !hasTools && !stream && requestSuccess) {
       try { await memory.storeConversation(userInput, resultText, rs.taskType); } catch {}
     }
 
     return c.json(makeResponse(resultText, modelUsed));
   } catch (e: any) {
+    // Record failure
+    experience?.record(rs.taskType, userInput, modelUsed || "unknown", usedCommittee, false);
     return c.json({ error: { message: String(e), type: "internal_error" } }, 500);
   }
 });

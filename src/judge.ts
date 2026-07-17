@@ -6,7 +6,7 @@ export interface JudgeResult {
   consistency: number;
   confidence: number;
   escalate: boolean;
-  get shouldEscalate(): boolean;
+  shouldEscalate: boolean;
 }
 
 const PROMPT = `Analyze this Q&A pair and respond with ONLY JSON (no markdown):
@@ -26,32 +26,36 @@ export async function judge(
     const resp = await chat(model, [{ role: "user", content: prompt }], { temperature: 0, maxTokens: 200 });
     return parse(resp.content, threshold);
   } catch {
-    return { completeness: 0.8, consistency: 0.8, confidence: 0.7, escalate: false,
-      get shouldEscalate() { return false; } };
+    return fallback(threshold);
   }
 }
 
 function parse(text: string, threshold: number): JudgeResult {
   const m = text.match(/\{[^}]+\}/s);
-  if (!m) return fallback();
+  if (!m) return fallback(threshold);
   try {
     const d = JSON.parse(m[0]);
-    let confidence = Number(d.confidence ?? 0.7);
-    let escalate = Boolean(d.escalate ?? false);
-    if (confidence < threshold) escalate = true;
+    const confidence = Number(d.confidence ?? 0.7);
+    const shouldEscalate = confidence < threshold || Boolean(d.escalate ?? false);
     return {
       completeness: Number(d.completeness ?? 0.8),
       consistency: Number(d.consistency ?? 0.8),
       confidence,
-      escalate,
-      get shouldEscalate() { return this.escalate || this.confidence < 0.6; },
+      escalate: shouldEscalate,
+      shouldEscalate,
     };
   } catch {
-    return fallback();
+    return fallback(threshold);
   }
 }
 
-function fallback(): JudgeResult {
-  return { completeness: 0.8, consistency: 0.8, confidence: 0.7, escalate: false,
-    get shouldEscalate() { return false; } };
+function fallback(threshold: number = 0.6): JudgeResult {
+  const confidence = 0.7;
+  return {
+    completeness: 0.8,
+    consistency: 0.8,
+    confidence,
+    escalate: false,
+    shouldEscalate: confidence < threshold,
+  };
 }
