@@ -2,7 +2,7 @@
 <html lang="zh">
 <head>
 <meta charset="UTF-8">
-<title>lazy-moa 设置</title>
+<title>opti-moa 设置</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: -apple-system, system-ui, sans-serif; background: #0f0f0f; color: #e0e0e0; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
@@ -24,7 +24,7 @@ h1 { font-size: 24px; margin-bottom: 8px; }
 </head>
 <body>
 <div class="container">
-  <h1>lazy-moa</h1>
+  <h1>opti-moa</h1>
   <p class="subtitle">智能路由 · 条件式委员会 · 记忆压缩 · 经验学习</p>
   <div class="card">
     <div class="provider">
@@ -67,7 +67,7 @@ async function save() {
   if (cu) { const ck=document.getElementById('custom_key').value||'none'; const cm=document.getElementById('custom_model').value||'default'; models.custom={base_url:cu,api_key:ck,model:cm,supports_cache:false,max_tokens:8192}; names.push('custom'); if(!cheap)cheap='custom'; strong='custom'; }
   if (!names.length) { s.textContent='请至少填写一个 API Key'; s.className='status err'; return; }
   const mid = names.length>2?names[Math.floor(names.length/2)]:(strong||cheap);
-  const cfg = {server:{host:'127.0.0.1',port:8080},models,tiers:{C0:cheap,C1:cheap,C2:mid,C3:strong},committee:{members:names,aggregator:strong,trigger_threshold:0.7,reference_max_tokens:2048},judge:{model:cheap,confidence_threshold:0.6},compressor:{enabled:true,tool_result_budget:4000,compress_threshold:20000},experience:{db_path:'~/.lazy-moa/experience.db'},cost:{daily_budget:5.0,moa_max_per_day:20}};
+  const cfg = {server:{host:'127.0.0.1',port:8080},models,tiers:{C0:cheap,C1:cheap,C2:mid,C3:strong},committee:{members:names,aggregator:strong,trigger_threshold:0.7,reference_max_tokens:2048},judge:{model:cheap,confidence_threshold:0.6},compressor:{enabled:true,tool_result_budget:4000,compress_threshold:20000},experience:{db_path:'~/.opti-moa/experience.db'},cost:{daily_budget:5.0,moa_max_per_day:20}};
   try {
     const r = await fetch('/api/setup', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
     if (r.ok) { s.textContent='✅ 配置完成！正在启动...'; s.className='status ok'; setTimeout(()=>location.reload(),2000); }

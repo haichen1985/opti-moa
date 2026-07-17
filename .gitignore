@@ -5,6 +5,6 @@ dist/
 .env
 .DS_Store
 *.log
-~/.lazy-moa/
+~/.opti-moa/
 config.yaml
 config.yml

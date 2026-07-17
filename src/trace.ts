@@ -11,7 +11,7 @@ export class TraceLogger {
   private dir: string;
   enabled: boolean;
 
-  constructor(dir = "~/.lazy-moa/traces", enabled = false) {
+  constructor(dir = "~/.opti-moa/traces", enabled = false) {
     this.dir = dir.replace("~", homedir());
     this.enabled = enabled;
     if (enabled) mkdirSync(this.dir, { recursive: true });

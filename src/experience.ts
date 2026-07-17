@@ -17,7 +17,7 @@ export interface BestStrategy {
 export class ExperienceEngine {
   private db: Database.Database;
 
-  constructor(dbPath = "~/.lazy-moa/experience.db") {
+  constructor(dbPath = "~/.opti-moa/experience.db") {
     const expanded = dbPath.replace("~", homedir());
     mkdirSync(join(expanded, ".."), { recursive: true });
     this.db = new Database(expanded);

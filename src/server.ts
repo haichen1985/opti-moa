@@ -31,7 +31,7 @@ function init(configPath: string) {
       cheap.baseUrl, cheap.apiKey
     );
   }
-  console.log(`lazy-moa ready: ${Object.keys(config.models).length} models, port ${config.port}`);
+  console.log(`opti-moa ready: ${Object.keys(config.models).length} models, port ${config.port}`);
 }
 
 const SETUP_HTML = readFileSync(new URL("./web/setup.html", import.meta.url), "utf-8");
@@ -43,12 +43,12 @@ function needsSetup(): boolean {
 // ─── Setup page ───
 app.get("/", (c) => {
   if (needsSetup()) return c.html(SETUP_HTML);
-  return c.html(`<h1>lazy-moa running</h1><p>base_url: http://${config!.host}:${config!.port}/v1</p><p><a href="/stats">stats</a> | <a href="/memory">memory</a></p>`);
+  return c.html(`<h1>opti-moa running</h1><p>base_url: http://${config!.host}:${config!.port}/v1</p><p><a href="/stats">stats</a> | <a href="/memory">memory</a></p>`);
 });
 
 app.post("/api/setup", async (c) => {
   const body = await c.req.json();
-  const configDir = join(homedir(), ".lazy-moa");
+  const configDir = join(homedir(), ".opti-moa");
   mkdirSync(configDir, { recursive: true });
   const configPath = join(configDir, "config.yaml");
   writeFileSync(configPath, yaml.dump(body, { indent: 2 }), "utf-8");
@@ -148,7 +148,7 @@ app.post("/v1/chat/completions", async (c) => {
     modelUsed = tierModel.name;
     let resultText = await runSingle(tierModel, messages, body, stream, rs.tier);
 
-    // Lazy MOA
+    // OptiMoa
     if (!hasTools && !stream && rs.committeeScore > 0.4 && rs.committeeScore < config.committee.triggerThreshold && withinBudget()) {
       const j = await judge(userInput, resultText, config.models[config.judgeModel], config.judgeConfidenceThreshold);
       if (j.shouldEscalate) {

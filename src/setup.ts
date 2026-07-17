@@ -35,7 +35,7 @@ async function checkOllama(): Promise<{ models: string[]; port: number } | null>
 }
 
 export async function runSetup(): Promise<string> {
-  console.log("\n  lazy-moa 初始化配置\n");
+  console.log("\n  opti-moa 初始化配置\n");
 
   // Auto-detect Ollama
   const ollama = await checkOllama();
@@ -114,11 +114,11 @@ export async function runSetup(): Promise<string> {
     },
     judge: { model: cheapModel, confidence_threshold: 0.6 },
     compressor: { enabled: true, tool_result_budget: 4000, compress_threshold: 20000 },
-    experience: { db_path: "~/.lazy-moa/experience.db", confidence_threshold: 0.85 },
+    experience: { db_path: "~/.opti-moa/experience.db", confidence_threshold: 0.85 },
     cost: { daily_budget: 5.0, moa_max_per_day: 20, on_budget_exceeded: "degrade" },
   };
 
-  const configDir = join(homedir(), ".lazy-moa");
+  const configDir = join(homedir(), ".opti-moa");
   mkdirSync(configDir, { recursive: true });
   const configPath = join(configDir, "config.yaml");
   writeFileSync(configPath, yaml.dump(config, { indent: 2 }), "utf-8");
@@ -129,7 +129,7 @@ export async function runSetup(): Promise<string> {
   委员会成员: ${modelNames.join(", ")}
   配置文件: ${configPath}\n`);
 
-  const startNow = await confirm({ message: "现在启动 lazy-moa 吗？", default: true });
+  const startNow = await confirm({ message: "现在启动 opti-moa 吗？", default: true });
   if (startNow) {
     return configPath;
   }

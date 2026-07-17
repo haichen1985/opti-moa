@@ -1,5 +1,5 @@
 {
-  "name": "lazy-moa",
+  "name": "opti-moa",
   "version": "0.1.0",
   "type": "module",
   "description": "Risk-aware LLM proxy: smart routing + conditional MOA + context compression + experience learning",
@@ -9,12 +9,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/haichen1985/lazy-moa"
+    "url": "https://github.com/haichen1985/opti-moa"
   },
-  "homepage": "https://github.com/haichen1985/lazy-moa",
+  "homepage": "https://github.com/haichen1985/opti-moa",
   "license": "MIT",
   "bin": {
-    "lazy-moa": "./dist/index.js"
+    "opti-moa": "./dist/index.js"
   },
   "scripts": {
     "dev": "tsx src/index.ts",

@@ -6,7 +6,7 @@ import { homedir } from "os";
 export class FlywheelCollector {
   private dbPath: string;
 
-  constructor(dbPath = "~/.lazy-moa/experience.db") {
+  constructor(dbPath = "~/.opti-moa/experience.db") {
     this.dbPath = dbPath.replace("~", homedir());
   }
 

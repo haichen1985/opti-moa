@@ -15,7 +15,7 @@ export class MermaidCanvas {
   private nodes: CanvasNode[] = [];
   private refsDir: string;
 
-  constructor(refsDir = "~/.lazy-moa/refs") {
+  constructor(refsDir = "~/.opti-moa/refs") {
     this.refsDir = refsDir.replace("~", homedir());
     mkdirSync(this.refsDir, { recursive: true });
   }

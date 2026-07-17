@@ -1,4 +1,4 @@
-# lazy-moa 配置文件
+# opti-moa 配置文件
 # 复制为 config.yaml 并填入你的 API Key
 
 server:
@@ -6,7 +6,7 @@ server:
   port: 8080
 
 # ─── 模型配置 ───
-# 配任意数量的云端 API 端点，lazy-moa 会根据任务复杂度自动路由
+# 配任意数量的云端 API 端点，opti-moa 会根据任务复杂度自动路由
 # 所有模型都必须是 OpenAI 兼容的 /v1/chat/completions 接口
 models:
   # 最便宜的模型（C0/C1 层 + Judge）
@@ -63,7 +63,7 @@ committee:
   trigger_threshold: 0.7          # 评分超过此值才触发委员会
   reference_max_tokens: 2048      # 每个参考模型的最大输出
 
-# ─── Judge 质量判定（Lazy MOA）───
+# ─── Judge 质量判定（OptiMoa）───
 judge:
   model: cheap                    # 用最便宜的模型当 Judge
   confidence_threshold: 0.6       # 置信度低于此值才升级到委员会
@@ -76,7 +76,7 @@ compressor:
 
 # ─── 经验学习引擎 ───
 experience:
-  db_path: ~/.lazy-moa/experience.db
+  db_path: ~/.opti-moa/experience.db
   confidence_threshold: 0.85      # 历史成功率超过此值才直接复用
 
 # ─── 成本控制 ───
@@ -88,4 +88,4 @@ cost:
 # ─── Trace 持久化（可选）───
 trace:
   enabled: false                  # 开启后记录每次路由决策和 MOA 轮次
-  trace_dir: ~/.lazy-moa/traces   # JSONL 文件存储目录
+  trace_dir: ~/.opti-moa/traces   # JSONL 文件存储目录

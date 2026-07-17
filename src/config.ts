@@ -55,7 +55,7 @@ export function defaultConfig(): Partial<AppConfig> {
     judgeModel: "cheap",
     judgeConfidenceThreshold: 0.6,
     compressor: { enabled: true, toolResultBudget: 4000, compressThreshold: 20000 },
-    experienceDbPath: "~/.lazy-moa/experience.db",
+    experienceDbPath: "~/.opti-moa/experience.db",
     host: "127.0.0.1",
     port: 8080,
     dailyBudget: 5.0,
@@ -120,8 +120,8 @@ export function findConfig(): string | null {
   const candidates = [
     join(process.cwd(), "config.yaml"),
     join(process.cwd(), "config.yml"),
-    join(home, ".lazy-moa", "config.yaml"),
-    join(home, ".lazy-moa", "config.yml"),
+    join(home, ".opti-moa", "config.yaml"),
+    join(home, ".opti-moa", "config.yml"),
   ];
   for (const p of candidates) {
     if (existsSync(p)) return p;

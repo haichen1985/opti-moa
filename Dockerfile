@@ -7,7 +7,7 @@ RUN npm install --production
 
 COPY src/ src/
 
-RUN mkdir -p /root/.lazy-moa
+RUN mkdir -p /root/.opti-moa
 
 EXPOSE 8080
 

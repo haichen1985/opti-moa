@@ -1,13 +1,13 @@
-/** MCP Server mode — exposes lazy-moa capabilities as MCP tools.
+/** MCP Server mode — exposes opti-moa capabilities as MCP tools.
  *
- * Any MCP-compatible agent (Hermes, Claude Code, Cursor) can use lazy-moa
+ * Any MCP-compatible agent (Hermes, Claude Code, Cursor) can use opti-moa
  * as a tool provider instead of (or in addition to) proxy mode.
  *
  * Usage in agent config:
  *   mcp_servers:
- *     lazy-moa:
+ *     opti-moa:
  *       command: npx
- *       args: [lazy-moa, --mcp]
+ *       args: [opti-moa, --mcp]
  */
 
 import { Hono } from "hono";

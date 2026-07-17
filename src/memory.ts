@@ -18,7 +18,7 @@ export class SemanticMemory {
   private embBaseUrl?: string;
   private embApiKey?: string;
 
-  constructor(dbPath = "~/.lazy-moa/memory.db", embBaseUrl?: string, embApiKey?: string) {
+  constructor(dbPath = "~/.opti-moa/memory.db", embBaseUrl?: string, embApiKey?: string) {
     const expanded = dbPath.replace("~", homedir());
     mkdirSync(join(expanded, ".."), { recursive: true });
     this.db = new Database(expanded);
