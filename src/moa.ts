@@ -16,7 +16,7 @@ export async function executeCommittee(
   const refMsgs = [{ role: "system", content: ADVISORY }, ...trimToolResults(messages, 4000)];
 
   const results = await Promise.allSettled(
-    members.map((m) => chat(m, refMsgs, { temperature: 0.5, maxTokens: refMaxTokens }))
+    members.map((m) => chat(m, refMsgs, { temperature: 0.5, maxTokens: refMaxTokens, timeoutMs: 45_000, retries: 0 }))
   );
 
   const texts: string[] = [];
@@ -38,10 +38,13 @@ export async function executeCommittee(
   aggMsgs = applyCacheControl(aggMsgs, aggregator);
 
   try {
-    const agg = await chat(aggregator, aggMsgs, { temperature: 0.3, maxTokens: aggregator.maxTokens });
+    const agg = await chat(aggregator, aggMsgs, { temperature: 0.3, maxTokens: aggregator.maxTokens, timeoutMs: 45_000, retries: 0 });
     const final = agg.content.trim() || texts[0] || "Committee produced no output.";
     return { text: final, info };
   } catch {
-    return { text: joined, info };
+    // Aggregator failed: return the longest successful member response
+    const valid = texts.filter((t) => !t.startsWith("[Reference"));
+    const best = valid.length ? valid.reduce((a, b) => a.length >= b.length ? a : b) : texts[0] || "Committee produced no output.";
+    return { text: best, info };
   }
 }

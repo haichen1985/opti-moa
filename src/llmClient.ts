@@ -47,7 +47,7 @@ async function fetchWithTimeout(
 export async function chat(
   model: ModelConfig,
   messages: any[],
-  opts: { temperature?: number; maxTokens?: number; extra?: Record<string, any> } = {}
+  opts: { temperature?: number; maxTokens?: number; extra?: Record<string, any>; timeoutMs?: number; retries?: number } = {}
 ): Promise<LLMResponse> {
   const start = performance.now();
   const body: any = { model: model.model, messages };
@@ -65,7 +65,8 @@ export async function chat(
       },
       body: JSON.stringify(body),
     },
-    DEFAULT_TIMEOUT
+    opts.timeoutMs ?? DEFAULT_TIMEOUT,
+    opts.retries ?? MAX_RETRIES
   );
   if (!resp.ok) throw new Error(`LLM error ${resp.status}: ${await resp.text()}`);
   const data: any = await resp.json();
