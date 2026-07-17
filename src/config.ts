@@ -1,3 +1,8 @@
+import { readFileSync, existsSync } from "fs";
+import { join } from "path";
+import { homedir } from "os";
+import * as yaml from "js-yaml";
+
 export interface ModelConfig {
   name: string;
   baseUrl: string;
@@ -71,27 +76,55 @@ export function resolveEnvVars(obj: any): any {
   return obj;
 }
 
+// snake_case → camelCase bridge for YAML config
+function snakeToCamel(obj: any): any {
+  if (Array.isArray(obj)) return obj.map(snakeToCamel);
+  if (obj && typeof obj === "object") {
+    const out: any = {};
+    for (const [k, v] of Object.entries(obj)) {
+      const key = k.replace(/_./g, (m) => m[1].toUpperCase());
+      out[key] = snakeToCamel(v);
+    }
+    return out;
+  }
+  return obj;
+}
+
 export function loadConfig(path: string): AppConfig {
-  const fs = require("fs") as typeof import("fs");
-  const yaml = require("js-yaml");
-  const raw = yaml.load(fs.readFileSync(path, "utf-8"));
+  const raw = yaml.load(readFileSync(path, "utf-8")) as any;
   const resolved = resolveEnvVars(raw);
+  const camel = snakeToCamel(resolved);
   const defaults = defaultConfig();
-  return { ...defaults, ...resolved } as AppConfig;
+  const cfg = { ...defaults, ...camel } as AppConfig;
+  // Set model name from YAML key + populate missing fields
+  if (cfg.models) {
+    for (const [name, m] of Object.entries(cfg.models)) {
+      m.name = name;
+      if (m.supportsCache === undefined) m.supportsCache = false;
+      if (m.maxTokens === undefined) m.maxTokens = 8192;
+    }
+  }
+  // Map tier names to model names if not already
+  if (cfg.tiers) {
+    for (const [tier, modelName] of Object.entries(cfg.tiers)) {
+      if (cfg.models && !cfg.models[modelName] && cfg.models[modelName as string]) {
+        // already correct
+      }
+    }
+  }
+  return cfg;
 }
 
 export function findConfig(): string | null {
-  const fs = require("fs") as typeof import("fs");
-  const path = require("path") as typeof import("path");
-  const home = process.env.HOME || process.env.USERPROFILE || "";
+  const home = homedir();
   const candidates = [
-    path.join(process.cwd(), "config.yaml"),
-    path.join(process.cwd(), "config.yml"),
-    path.join(home, ".lazy-moa", "config.yaml"),
-    path.join(home, ".lazy-moa", "config.yml"),
+    join(process.cwd(), "config.yaml"),
+    join(process.cwd(), "config.yml"),
+    join(home, ".lazy-moa", "config.yaml"),
+    join(home, ".lazy-moa", "config.yml"),
   ];
   for (const p of candidates) {
-    if (fs.existsSync(p)) return p;
+    if (existsSync(p)) return p;
   }
   return null;
 }
