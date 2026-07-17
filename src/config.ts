@@ -93,25 +93,50 @@ function snakeToCamel(obj: any): any {
 export function loadConfig(path: string): AppConfig {
   const raw = yaml.load(readFileSync(path, "utf-8")) as any;
   const resolved = resolveEnvVars(raw);
-  const camel = snakeToCamel(resolved);
   const defaults = defaultConfig();
-  const cfg = { ...defaults, ...camel } as AppConfig;
-  // Set model name from YAML key + populate missing fields
-  if (cfg.models) {
-    for (const [name, m] of Object.entries(cfg.models)) {
-      m.name = name;
-      if (m.supportsCache === undefined) m.supportsCache = false;
-      if (m.maxTokens === undefined) m.maxTokens = 8192;
+
+  // Build models manually — don't let snakeToCamel touch model name keys
+  const models: Record<string, ModelConfig> = {};
+  if (resolved.models) {
+    for (const [name, spec] of Object.entries(resolved.models)) {
+      const m = spec as any;
+      models[name] = {
+        name,
+        baseUrl: m.base_url || m.baseUrl || "",
+        apiKey: m.api_key || m.apiKey || "",
+        model: m.model || "",
+        supportsCache: m.supports_cache ?? m.supportsCache ?? false,
+        maxTokens: m.max_tokens ?? m.maxTokens ?? 8192,
+      };
     }
   }
-  // Map tier names to model names if not already
-  if (cfg.tiers) {
-    for (const [tier, modelName] of Object.entries(cfg.tiers)) {
-      if (cfg.models && !cfg.models[modelName] && cfg.models[modelName as string]) {
-        // already correct
-      }
-    }
-  }
+
+  // Build config with explicit field mapping
+  const cfg: AppConfig = {
+    ...defaults,
+    models,
+    tiers: resolved.tiers || defaults.tiers!,
+    committee: {
+      members: resolved.committee?.members || defaults.committee!.members,
+      aggregator: resolved.committee?.aggregator || defaults.committee!.aggregator,
+      triggerThreshold: resolved.committee?.trigger_threshold ?? resolved.committee?.triggerThreshold ?? defaults.committee!.triggerThreshold,
+      referenceMaxTokens: resolved.committee?.reference_max_tokens ?? resolved.committee?.referenceMaxTokens ?? defaults.committee!.referenceMaxTokens,
+      fanoutMode: resolved.committee?.fanout_mode ?? resolved.committee?.fanoutMode ?? defaults.committee!.fanoutMode,
+    },
+    judgeModel: resolved.judge?.model ?? resolved.judgeModel ?? defaults.judgeModel!,
+    judgeConfidenceThreshold: resolved.judge?.confidence_threshold ?? resolved.judge?.confidenceThreshold ?? defaults.judgeConfidenceThreshold!,
+    compressor: {
+      enabled: resolved.compressor?.enabled ?? defaults.compressor!.enabled,
+      toolResultBudget: resolved.compressor?.tool_result_budget ?? resolved.compressor?.toolResultBudget ?? defaults.compressor!.toolResultBudget,
+      compressThreshold: resolved.compressor?.compress_threshold ?? resolved.compressor?.compressThreshold ?? defaults.compressor!.compressThreshold,
+    },
+    experienceDbPath: resolved.experience?.db_path ?? resolved.experienceDbPath ?? defaults.experienceDbPath!,
+    dailyBudget: resolved.cost?.daily_budget ?? resolved.cost?.dailyBudget ?? defaults.dailyBudget!,
+    moaMaxPerDay: resolved.cost?.moa_max_per_day ?? resolved.cost?.moaMaxPerDay ?? defaults.moaMaxPerDay!,
+    host: resolved.server?.host ?? defaults.host!,
+    port: resolved.server?.port ?? defaults.port!,
+  } as AppConfig;
+
   return cfg;
 }
 

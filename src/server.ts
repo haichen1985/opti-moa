@@ -239,4 +239,4 @@ export async function main() {
   serve({ fetch: app.fetch, port: config?.port || 8080, hostname: config?.host || "127.0.0.1" });
 }
 
-main();
+
