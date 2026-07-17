@@ -1,0 +1,27 @@
+{
+  "name": "lazy-moa",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "lazy-moa": "./dist/index.js"
+  },
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsup src/index.ts --format esm --dts",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "hono": "^4.6.0",
+    "@hono/node-server": "^1.13.0",
+    "better-sqlite3": "^11.0.0",
+    "js-yaml": "^4.1.0",
+    "@inquirer/prompts": "^7.0.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "tsup": "^8.3.0",
+    "@types/js-yaml": "^4.0.9",
+    "@types/better-sqlite3": "^7.6.0",
+    "typescript": "^5.6.0"
+  }
+}

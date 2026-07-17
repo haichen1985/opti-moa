@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>lazy-moa 设置</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, system-ui, sans-serif; background: #0f0f0f; color: #e0e0e0; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+.container { max-width: 560px; width: 90%; }
+h1 { font-size: 24px; margin-bottom: 8px; }
+.subtitle { color: #888; margin-bottom: 32px; }
+.card { background: #1a1a1a; border-radius: 12px; padding: 32px; border: 1px solid #333; }
+.provider { margin-bottom: 20px; }
+.provider label { display: block; margin-bottom: 6px; font-size: 14px; color: #aaa; }
+.provider input { width: 100%; padding: 10px 14px; background: #0f0f0f; border: 1px solid #444; border-radius: 8px; color: #e0e0e0; font-size: 14px; }
+.provider input:focus { outline: none; border-color: #4a9eff; }
+.btn { width: 100%; padding: 14px; background: #4a9eff; border: none; border-radius: 8px; color: #fff; font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 12px; }
+.btn:hover { background: #3a8eef; }
+.status { margin-top: 16px; text-align: center; font-size: 14px; min-height: 20px; }
+.ok { color: #4caf50; }
+.err { color: #f44336; }
+.hint { margin-top: 24px; font-size: 12px; color: #666; text-align: center; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>lazy-moa</h1>
+  <p class="subtitle">智能路由 · 条件式委员会 · 记忆压缩 · 经验学习</p>
+  <div class="card">
+    <div class="provider">
+      <label>DeepSeek API Key</label>
+      <input id="deepseek_key" placeholder="sk-..." />
+    </div>
+    <div class="provider">
+      <label>OpenAI API Key</label>
+      <input id="openai_key" placeholder="sk-..." />
+    </div>
+    <div class="provider">
+      <label>Anthropic API Key（可选）</label>
+      <input id="anthropic_key" placeholder="sk-ant-..." />
+    </div>
+    <div class="provider">
+      <label>自定义 OpenAI 兼容端点（可选）</label>
+      <input id="custom_url" placeholder="http://127.0.0.1:11434/v1" />
+      <input id="custom_key" placeholder="API Key" style="margin-top:8px" />
+      <input id="custom_model" placeholder="模型名" style="margin-top:8px" />
+    </div>
+    <button class="btn" onclick="save()">保存并启动</button>
+    <div class="status" id="status"></div>
+  </div>
+  <p class="hint">填你有的就行，不需要全部填写。配置后打开 http://localhost:8080/v1/chat/completions 使用</p>
+</div>
+<script>
+async function save() {
+  const s = document.getElementById('status');
+  s.textContent = '保存中...'; s.className = 'status';
+  const models = {};
+  const names = [];
+  let cheap = '', strong = '';
+  const ds = document.getElementById('deepseek_key').value;
+  if (ds) { models.deepseek_cheap = {base_url:'https://api.deepseek.com/v1',api_key:ds,model:'deepseek-chat',supports_cache:false,max_tokens:8192}; models.deepseek_strong = {base_url:'https://api.deepseek.com/v1',api_key:ds,model:'deepseek-reasoner',supports_cache:false,max_tokens:8192}; names.push('deepseek_cheap','deepseek_strong'); if(!cheap)cheap='deepseek_cheap'; strong='deepseek_strong'; }
+  const oi = document.getElementById('openai_key').value;
+  if (oi) { models.openai_cheap = {base_url:'https://api.openai.com/v1',api_key:oi,model:'gpt-4o-mini',supports_cache:false,max_tokens:8192}; models.openai_strong = {base_url:'https://api.openai.com/v1',api_key:oi,model:'gpt-4o',supports_cache:false,max_tokens:8192}; names.push('openai_cheap','openai_strong'); if(!cheap)cheap='openai_cheap'; strong='openai_strong'; }
+  const an = document.getElementById('anthropic_key').value;
+  if (an) { models.anthropic_strong = {base_url:'https://api.anthropic.com/v1',api_key:an,model:'claude-sonnet-4-20250514',supports_cache:true,max_tokens:8192}; names.push('anthropic_strong'); if(!cheap)cheap='anthropic_strong'; strong='anthropic_strong'; }
+  const cu = document.getElementById('custom_url').value;
+  if (cu) { const ck=document.getElementById('custom_key').value||'none'; const cm=document.getElementById('custom_model').value||'default'; models.custom={base_url:cu,api_key:ck,model:cm,supports_cache:false,max_tokens:8192}; names.push('custom'); if(!cheap)cheap='custom'; strong='custom'; }
+  if (!names.length) { s.textContent='请至少填写一个 API Key'; s.className='status err'; return; }
+  const mid = names.length>2?names[Math.floor(names.length/2)]:(strong||cheap);
+  const cfg = {server:{host:'127.0.0.1',port:8080},models,tiers:{C0:cheap,C1:cheap,C2:mid,C3:strong},committee:{members:names,aggregator:strong,trigger_threshold:0.7,reference_max_tokens:2048},judge:{model:cheap,confidence_threshold:0.6},compressor:{enabled:true,tool_result_budget:4000,compress_threshold:20000},experience:{db_path:'~/.lazy-moa/experience.db'},cost:{daily_budget:5.0,moa_max_per_day:20}};
+  try {
+    const r = await fetch('/api/setup', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
+    if (r.ok) { s.textContent='✅ 配置完成！正在启动...'; s.className='status ok'; setTimeout(()=>location.reload(),2000); }
+    else { const e = await r.text(); s.textContent='错误: '+e; s.className='status err'; }
+  } catch(e) { s.textContent='网络错误'; s.className='status err'; }
+}
+</script>
+</body>
+</html>

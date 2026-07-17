@@ -1,0 +1,201 @@
+import { Hono } from "hono";
+import { serve } from "@hono/node-server";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
+import { join } from "path";
+import { homedir } from "os";
+import * as yaml from "js-yaml";
+import { loadConfig, findConfig, type AppConfig, type ModelConfig } from "./config.js";
+import { score, extractUserInput, isBorderline } from "./scorer.js";
+import { judge } from "./judge.js";
+import { ExperienceEngine } from "./experience.js";
+import { SemanticMemory } from "./memory.js";
+import { executeCommittee } from "./moa.js";
+import { compressContext } from "./compressor.js";
+import { applyCacheControl } from "./cacheControl.js";
+import { chat, chatRaw, chatStream } from "./llmClient.js";
+
+let config: AppConfig | null = null;
+let experience: ExperienceEngine | null = null;
+let memory: SemanticMemory | null = null;
+let moaCountToday = 0;
+const app = new Hono();
+
+function init(configPath: string) {
+  config = loadConfig(configPath);
+  experience = new ExperienceEngine(config.experienceDbPath);
+  const cheap = config.models[config.tiers.C0 || "cheap"];
+  if (cheap) {
+    memory = new SemanticMemory(
+      config.experienceDbPath.replace("experience.db", "memory.db"),
+      cheap.baseUrl, cheap.apiKey
+    );
+  }
+  console.log(`lazy-moa ready: ${Object.keys(config.models).length} models, port ${config.port}`);
+}
+
+const SETUP_HTML = readFileSync(new URL("./web/setup.html", import.meta.url), "utf-8");
+
+function needsSetup(): boolean {
+  return !config || Object.keys(config.models).length === 0;
+}
+
+// ─── Setup page ───
+app.get("/", (c) => {
+  if (needsSetup()) return c.html(SETUP_HTML);
+  return c.html(`<h1>lazy-moa running</h1><p>base_url: http://${config!.host}:${config!.port}/v1</p><p><a href="/stats">stats</a> | <a href="/memory">memory</a></p>`);
+});
+
+app.post("/api/setup", async (c) => {
+  const body = await c.req.json();
+  const configDir = join(homedir(), ".lazy-moa");
+  mkdirSync(configDir, { recursive: true });
+  const configPath = join(configDir, "config.yaml");
+  writeFileSync(configPath, yaml.dump(body, { indent: 2 }), "utf-8");
+  init(configPath);
+  return c.json({ ok: true });
+});
+
+// ─── OpenAI-compatible proxy ───
+app.post("/v1/chat/completions", async (c) => {
+  if (!config) return c.json({ error: { message: "Not configured. Visit / to setup." } }, 500);
+  const body = await c.req.json();
+  let messages: any[] = body.messages || [];
+  const hasTools = !!(body.tools?.length);
+  const stream = body.stream || false;
+  const userInput = extractUserInput(messages);
+  let rs = score(userInput, hasTools);
+
+  // Context compression
+  if (config.compressor.enabled) {
+    messages = compressContext(messages, config.compressor.compressThreshold, config.compressor.toolResultBudget);
+    body.messages = messages;
+  }
+
+  // Memory recall
+  if (memory && !hasTools) {
+    try {
+      const recalled = await memory.recall(userInput, "L0", 3);
+      const recallText = recalled.filter((r) => r.score > 0.5).map((r) => `[Relevant past context] ${r.content.slice(0, 300)}`).join("\n\n");
+      if (recallText) messages.unshift({ role: "system", content: recallText });
+    } catch {}
+  }
+
+  // Experience lookup
+  const strategy = experience?.lookup(rs.taskType);
+  let usedCommittee = false;
+  let modelUsed = "";
+
+  try {
+    if (strategy?.isReliable && !hasTools) {
+      modelUsed = strategy.model;
+      if (strategy.committee && withinBudget()) {
+        const { text } = await runCommittee(messages);
+        usedCommittee = true;
+        return c.json(makeResponse(text, modelUsed));
+      } else {
+        const text = await runSingle(config.models[strategy.model], messages, body, stream, rs.tier);
+        return c.json(makeResponse(text, modelUsed));
+      }
+    }
+
+    const trigger = rs.committeeScore >= config.committee.triggerThreshold;
+    if (trigger && withinBudget() && !hasTools) {
+      const { text } = await runCommittee(messages);
+      usedCommittee = true;
+      modelUsed = config.committee.aggregator;
+      return c.json(makeResponse(text, modelUsed));
+    }
+
+    const tierModel = config.models[config.tiers[rs.tier] || "cheap"];
+    modelUsed = tierModel.name;
+    let resultText = await runSingle(tierModel, messages, body, stream, rs.tier);
+
+    // Lazy MOA
+    if (!hasTools && !stream && rs.committeeScore > 0.4 && rs.committeeScore < config.committee.triggerThreshold && withinBudget()) {
+      const j = await judge(userInput, resultText, config.models[config.judgeModel], config.judgeConfidenceThreshold);
+      if (j.shouldEscalate) {
+        const { text } = await runCommittee(messages);
+        resultText = text;
+        usedCommittee = true;
+        modelUsed = config.committee.aggregator;
+      }
+    }
+
+    // Record experience
+    experience?.record(rs.taskType, userInput, modelUsed, usedCommittee, true);
+
+    // Store memory
+    if (memory && !hasTools && !stream) {
+      try { await memory.storeConversation(userInput, resultText, rs.taskType); } catch {}
+    }
+
+    return c.json(makeResponse(resultText, modelUsed));
+  } catch (e: any) {
+    return c.json({ error: { message: String(e), type: "internal_error" } }, 500);
+  }
+});
+
+// ─── Helpers ───
+async function runSingle(model: ModelConfig, messages: any[], body: any, stream: boolean, tier: string): Promise<string | any> {
+  messages = applyAdaptivePrompt(messages, tier);
+  if (stream) return chatStream(model, messages, { temperature: body.temperature, maxTokens: body.max_tokens });
+  messages = applyCacheControl(messages, model);
+  if (body.tools) return chatRaw(model, body);
+  const extra: any = {};
+  if (tier >= "C2" && !body.tools) extra.reasoning_effort = "high";
+  else if (tier === "C1") extra.reasoning_effort = "low";
+  const resp = await chat(model, messages, { temperature: body.temperature, maxTokens: body.max_tokens || model.maxTokens, extra: Object.keys(extra).length ? extra : undefined });
+  return resp.content;
+}
+
+async function runCommittee(messages: any[]) {
+  moaCountToday++;
+  const members = config!.committee.members.map((n) => config!.models[n]);
+  const aggregator = config!.models[config!.committee.aggregator];
+  return executeCommittee(messages, members, aggregator, config!.committee.referenceMaxTokens);
+}
+
+function withinBudget(): boolean { return moaCountToday < config!.moaMaxPerDay; }
+
+function makeResponse(content: string | any, model: string) {
+  if (typeof content === "object") return content;
+  return { id: `chatcmpl-${Date.now()}`, object: "chat.completion", model, choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop" }], usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } };
+}
+
+function applyAdaptivePrompt(messages: any[], tier: string): any[] {
+  const prompts: Record<string, string> = {
+    C0: "You are a helpful assistant. Answer concisely.",
+    C1: "You are a helpful assistant. Provide clear, accurate answers.",
+    C2: "You are an expert assistant. Provide thorough analysis with clear reasoning.",
+    C3: "You are an expert assistant handling a high-stakes task. Provide comprehensive analysis with explicit risk assessment. Flag uncertainties clearly.",
+  };
+  const idx = messages.findIndex((m) => m.role === "system");
+  const prompt = prompts[tier] || prompts.C1;
+  if (idx >= 0) {
+    if (typeof messages[idx].content === "string" && !messages[idx].content.includes("adaptive")) messages[idx].content = `${prompt}\n\n${messages[idx].content}`;
+  } else {
+    messages.unshift({ role: "system", content: prompt });
+  }
+  return messages;
+}
+
+// ─── Stats endpoints ───
+app.get("/health", (c) => c.json({ status: "ok", models: config ? Object.keys(config.models) : [] }));
+app.get("/stats", (c) => c.json(experience?.getStats() || { totalDecisions: 0 }));
+app.get("/memory", (c) => c.json(memory?.getStats() || { totalMemories: 0 }));
+app.get("/v1/models", (c) => c.json({ object: "list", data: [{ id: "auto", object: "model" }, ...(config ? Object.keys(config.models).map((n) => ({ id: n, object: "model" })) : [])] }));
+
+// ─── Entry point ───
+export async function main() {
+  const configPath = findConfig();
+  if (!configPath) {
+    const { runSetup } = await import("./setup.js");
+    const path = await runSetup();
+    init(path);
+  } else {
+    init(configPath);
+  }
+  serve({ fetch: app.fetch, port: config?.port || 8080, hostname: config?.host || "127.0.0.1" });
+}
+
+main();

@@ -1,0 +1,91 @@
+# lazy-moa 配置文件
+# 复制为 config.yaml 并填入你的 API Key
+
+server:
+  host: 127.0.0.1
+  port: 8080
+
+# ─── 模型配置 ───
+# 配任意数量的云端 API 端点，lazy-moa 会根据任务复杂度自动路由
+# 所有模型都必须是 OpenAI 兼容的 /v1/chat/completions 接口
+models:
+  # 最便宜的模型（C0/C1 层 + Judge）
+  cheap:
+    base_url: https://api.deepseek.com/v1
+    api_key: ${DEEPSEEK_API_KEY}
+    model: deepseek-chat
+    supports_cache: false
+    max_tokens: 8192
+
+  # 中等模型（C2 层）
+  mid:
+    base_url: https://api.openai.com/v1
+    api_key: ${OPENAI_API_KEY}
+    model: gpt-4o-mini
+    supports_cache: false
+    max_tokens: 8192
+
+  # 强力模型（C3 层 + 委员会成员）
+  strong:
+    base_url: https://api.openai.com/v1
+    api_key: ${OPENAI_API_KEY}
+    model: gpt-4o
+    supports_cache: false
+    max_tokens: 8192
+
+  # 可选：Anthropic 模型（支持 prompt 缓存）
+  # claude:
+  #   base_url: https://api.anthropic.com/v1
+  #   api_key: ${ANTHROPIC_API_KEY}
+  #   model: claude-sonnet-4-20250514
+  #   supports_cache: true
+  #   max_tokens: 8192
+
+  # 可选：本地模型（Ollama / vLLM 等任何 OpenAI 兼容端点）
+  # local:
+  #   base_url: http://127.0.0.1:11434/v1
+  #   api_key: "ollama"
+  #   model: qwen2.5:27b
+  #   supports_cache: false
+  #   max_tokens: 8192
+
+# ─── 路由层级 ───
+tiers:
+  C0: cheap       # 闲聊/翻译/格式化
+  C1: cheap       # 常规编码/总结
+  C2: mid         # 复杂分析/设计
+  C3: strong      # 高风险（架构/法律/医疗）
+
+# ─── 委员会（MOA）配置 ───
+committee:
+  members: [cheap, mid, strong]   # 委员会成员（并行调用）
+  aggregator: strong              # 聚合模型
+  trigger_threshold: 0.7          # 评分超过此值才触发委员会
+  reference_max_tokens: 2048      # 每个参考模型的最大输出
+
+# ─── Judge 质量判定（Lazy MOA）───
+judge:
+  model: cheap                    # 用最便宜的模型当 Judge
+  confidence_threshold: 0.6       # 置信度低于此值才升级到委员会
+
+# ─── 上下文压缩 ───
+compressor:
+  enabled: true
+  tool_result_budget: 4000        # 工具结果裁剪到多少字符
+  compress_threshold: 20000       # 上下文超过多少字符才触发压缩
+
+# ─── 经验学习引擎 ───
+experience:
+  db_path: ~/.lazy-moa/experience.db
+  confidence_threshold: 0.85      # 历史成功率超过此值才直接复用
+
+# ─── 成本控制 ───
+cost:
+  daily_budget: 5.0               # 每日预算（美元）
+  moa_max_per_day: 20             # 委员会每日触发上限
+  on_budget_exceeded: degrade     # budget_exceeded 时降级到单模型
+
+# ─── Trace 持久化（可选）───
+trace:
+  enabled: false                  # 开启后记录每次路由决策和 MOA 轮次
+  trace_dir: ~/.lazy-moa/traces   # JSONL 文件存储目录
