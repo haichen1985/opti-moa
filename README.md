@@ -9,7 +9,7 @@
 ### Install & Configure
 
 ```bash
-npx lazy-moa
+npx github:haichen1985/lazy-moa
 ```
 
 Open `http://localhost:8080` → fill in your API keys → done.
@@ -17,7 +17,7 @@ Open `http://localhost:8080` → fill in your API keys → done.
 Or use CLI wizard:
 
 ```bash
-npx lazy-moa setup
+npx github:haichen1985/lazy-moa setup
 # Auto-detects Ollama and env vars, just paste API keys
 ```
 
