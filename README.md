@@ -1,8 +1,15 @@
-# opti-moa
+# OptiMoa
 
-> Risk-aware LLM proxy: smart routing + conditional multi-model committee + context compression + experience learning.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue.svg)](https://www.typescriptlang.org/)
+[![Node](https://img.shields.io/badge/Node-18%2B-green.svg)](https://nodejs.org/)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/haichen1985/opti-moa/pulls)
+
+> **Smart LLM proxy that saves money and improves quality.**
 >
-> Point any AI agent's `base_url` to opti-moa — it routes to the cheapest capable model, only opens a multi-model committee for high-risk questions, compresses long contexts, and learns from every decision.
+> Point any AI agent's `base_url` to OptiMoa — it routes simple questions to cheap models, opens multi-model committees for high-risk questions, and learns from every decision to get smarter over time.
+
+**Why OptiMoa?** Not every question needs GPT-4o. "What's 2+2?" and "Design a distributed system" shouldn't cost the same. OptiMoa automatically picks the right model for each question — cheap for simple, strong for complex, committee for high-stakes.
 
 ## Quick Start
 
@@ -72,14 +79,25 @@ Your agent works exactly as before — but now it's smarter and cheaper.
 
 | Feature | Effect |
 |---------|--------|
-| **Smart routing** | 90% of requests → cheapest model, saves 80%+ cost |
-| **Conditional committee** | High-risk questions → multi-model parallel + aggregate |
-| **OptiMoa** | Try one model first → Judge checks → escalate only if uncertain |
-| **Context compression** | Trim tool logs + summarize old messages, save 60% tokens |
-| **Experience learning** | Records decisions, reuses best strategy for same task type |
+| **Smart routing** | Simple questions → cheap model, saves 60-80% cost |
+| **Conditional committee** | High-risk questions → 3 models parallel + aggregate |
+| **Async Judge scoring** | Background quality evaluation, zero added latency |
+| **Experience learning** | Records quality scores, reuses best strategy per task type |
+| **Context compression** | Trim tool logs + summarize old messages, save tokens |
 | **Semantic memory** | Embedding-based recall of past conversations |
 | **Adaptive prompts** | System prompt scales with task complexity |
 | **Cost control** | Daily budget + MOA limit + auto-degrade |
+
+## vs Alternatives
+
+| | OptiMoa | LangChain Router | LiteLLM | OpenRouter |
+|---|---------|-----------------|---------|------------|
+| Smart routing | ✅ 4-tier + risk scoring | ✅ | ❌ | ❌ |
+| Multi-model committee | ✅ Conditional MOA | ❌ | ❌ | ❌ |
+| Quality learning | ✅ Judge + experience | ❌ | ❌ | ❌ |
+| Zero-LLM scoring | ✅ Keywords, <1ms | ❌ | ❌ | ❌ |
+| Self-hosted | ✅ SQLite, no cloud | ✅ | ✅ | ❌ |
+| Setup effort | 1 command | Heavy config | Medium | Easy |
 
 ## How It Works
 
