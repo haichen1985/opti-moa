@@ -6,6 +6,7 @@ import { homedir } from "os";
 import * as yaml from "js-yaml";
 import { loadConfig, findConfig, type AppConfig, type ModelConfig } from "./config.js";
 import { score, extractUserInput, isBorderline } from "./scorer.js";
+import { llmClassify, mergeScores } from "./llmScorer.js";
 import { judge } from "./judge.js";
 import { ExperienceEngine } from "./experience.js";
 import { SemanticMemory } from "./memory.js";
@@ -13,17 +14,22 @@ import { executeCommittee } from "./moa.js";
 import { compressContext } from "./compressor.js";
 import { applyCacheControl } from "./cacheControl.js";
 import { chat, chatRaw, chatStream } from "./llmClient.js";
+import { createMcpServer } from "./mcpServer.js";
+import { FlywheelCollector } from "./flywheel.js";
 import { stream as honoStream } from "hono/streaming";
 
 let config: AppConfig | null = null;
 let experience: ExperienceEngine | null = null;
 let memory: SemanticMemory | null = null;
+let flywheel: FlywheelCollector | null = null;
 let moaCountToday = 0;
+let moaCountDate = new Date().toDateString();
 const app = new Hono();
 
 function init(configPath: string) {
   config = loadConfig(configPath);
   experience = new ExperienceEngine(config.experienceDbPath);
+  flywheel = new FlywheelCollector(config.experienceDbPath);
   const cheap = config.models[config.tiers.C0 || "cheap"];
   if (cheap) {
     memory = new SemanticMemory(
@@ -31,6 +37,8 @@ function init(configPath: string) {
       cheap.baseUrl, cheap.apiKey
     );
   }
+  // Mount MCP tool server
+  app.route("/mcp", createMcpServer(config));
   console.log(`opti-moa ready: ${Object.keys(config.models).length} models, port ${config.port}`);
 }
 
@@ -65,6 +73,22 @@ app.post("/v1/chat/completions", async (c) => {
   const stream = body.stream || false;
   const userInput = extractUserInput(messages);
   let rs = score(userInput, hasTools);
+
+  // LLM-enhanced scoring for borderline cases (not clearly simple, not clearly complex)
+  if (!hasTools && rs.committeeScore > 0.2 && rs.committeeScore < config.committee.triggerThreshold) {
+    try {
+      const cheapModel = config.models[config.tiers.C0 || "cheap"];
+      if (cheapModel) {
+        const llmResult = await Promise.race([
+          llmClassify(userInput, cheapModel),
+          new Promise<null>((_, rej) => setTimeout(() => rej(new Error("llm-score-timeout")), 5000)),
+        ]);
+        if (llmResult) {
+          rs = mergeScores(rs, llmResult);
+        }
+      }
+    } catch { /* LLM scoring failed, use keyword score */ }
+  }
 
   // Context compression
   if (config.compressor.enabled) {
@@ -208,7 +232,11 @@ async function runCommittee(messages: any[]) {
   return executeCommittee(messages, members, aggregator, config!.committee.referenceMaxTokens);
 }
 
-function withinBudget(): boolean { return moaCountToday < config!.moaMaxPerDay; }
+function withinBudget(): boolean {
+  const today = new Date().toDateString();
+  if (today !== moaCountDate) { moaCountToday = 0; moaCountDate = today; }
+  return moaCountToday < config!.moaMaxPerDay;
+}
 
 function makeResponse(content: string | any, model: string) {
   if (typeof content === "object") return content;
@@ -261,9 +289,10 @@ function recordOutcome(
   } else {
     // C0 chitchat or tool/stream: just record basic success
     experience?.record(taskType, input, model, committee, success);
-    if (memory && !hasTools && !stream && success) {
+    const mem = memory;
+    if (mem && !hasTools && !stream && success) {
       setImmediate(async () => {
-        try { await memory.storeConversation(input, resultStr, taskType); } catch {}
+        try { await mem.storeConversation(input, resultStr, taskType); } catch {}
       });
     }
   }
@@ -274,6 +303,15 @@ app.get("/health", (c) => c.json({ status: "ok", models: config ? Object.keys(co
 app.get("/stats", (c) => c.json(experience?.getStats() || { totalDecisions: 0 }));
 app.get("/memory", (c) => c.json(memory?.getStats() || { totalMemories: 0 }));
 app.get("/v1/models", (c) => c.json({ object: "list", data: [{ id: "auto", object: "model" }, ...(config ? Object.keys(config.models).map((n) => ({ id: n, object: "model" })) : [])] }));
+
+// Flywheel data export
+app.get("/flywheel/stats", (c) => c.json(flywheel?.getStats() || { totalSamples: 0 }));
+app.get("/flywheel/export", (c) => {
+  const format = c.req.query("format") || "jsonl";
+  const outPath = join(homedir(), ".opti-moa", `flywheel-export.${format === "csv" ? "csv" : "jsonl"}`);
+  const count = format === "csv" ? flywheel?.exportCsv(outPath) : flywheel?.exportJsonl(outPath);
+  return c.json({ exported: count || 0, path: outPath });
+});
 
 // ─── Entry point ───
 export async function main() {
