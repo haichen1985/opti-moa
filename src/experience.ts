@@ -85,4 +85,34 @@ export class ExperienceEngine {
       byTask: byTask.map((r) => ({ task: r.t, count: r.c, successRate: r.sr, avgQuality: r.qs ? Number(r.qs.toFixed(3)) : null })),
     };
   }
+
+  /** Flywheel: export decision data for offline analysis */
+  getFlywheelStats(): any {
+    const total = (this.db.prepare("SELECT COUNT(*) as c FROM decisions").get() as any).c;
+    const moa = (this.db.prepare("SELECT COUNT(*) as c FROM decisions WHERE committee = 1").get() as any).c;
+    const byModel = this.db.prepare(
+      "SELECT model as m, COUNT(*) as c, AVG(success) as sr, AVG(quality_score) as qs FROM decisions GROUP BY model ORDER BY c DESC"
+    ).all() as any[];
+    return {
+      totalSamples: total, mlReady: total >= 100, moaInvocations: moa,
+      modelDistribution: Object.fromEntries(byModel.map((r) => [r.m, { count: r.c, successRate: Number((r.sr || 0).toFixed(3)), avgQuality: r.qs ? Number(r.qs.toFixed(3)) : null }])),
+      recommendedAction: total >= 500 ? "Export and train LightGBM router" : total < 100 ? `Need ${100 - total} more samples` : `Need ${500 - total} more for production`,
+    };
+  }
+
+  exportJsonl(): string {
+    const rows = this.db.prepare("SELECT * FROM decisions ORDER BY timestamp").all() as any[];
+    return rows.map((r) => JSON.stringify(r)).join("\n") + "\n";
+  }
+
+  /** Dynamic committee: get best model combo for a task type from experience */
+  getBestMembers(taskType: string, availableModels: string[]): string[] | null {
+    const rows = this.db.prepare(
+      `SELECT model, AVG(quality_score) as qs, AVG(success) as sr, COUNT(*) as sc
+       FROM decisions WHERE task_type = ? AND quality_score IS NOT NULL
+       GROUP BY model HAVING sc >= 2 ORDER BY qs DESC, sr DESC`
+    ).all(taskType) as any[];
+    const good = rows.filter((r) => r.qs >= 0.6 && availableModels.includes(r.model)).map((r) => r.model);
+    return good.length >= 2 ? good.slice(0, 3) : null;
+  }
 }

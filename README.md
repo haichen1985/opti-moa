@@ -95,6 +95,8 @@ Your agent works exactly as before — but now it's smarter and cheaper.
 | **Context compression** | Trim tool logs + summarize old messages, save tokens |
 | **Semantic memory** | Embedding-based recall of past conversations |
 | **Reasoning model support** | Auto-detects reasoning_content (mimo, deepseek-reasoner) |
+| **Dynamic committee** | Learns best model combo per task type from experience |
+| **Flywheel data** | Export decision data for offline ML training |
 | **Cost control** | Daily budget + MOA limit + auto-degrade |
 
 ## vs Alternatives
@@ -173,6 +175,8 @@ Any OpenAI-compatible endpoint works: DeepSeek, OpenAI, Anthropic, Groq, Silicon
 | `GET /health` | Health check |
 | `GET /stats` | Experience engine stats |
 | `GET /memory` | Semantic memory stats |
+| `GET /flywheel` | Flywheel data stats + ML readiness |
+| `GET /flywheel/export` | Export all decisions as JSONL |
 | `GET /` | Web setup page (if not configured) |
 
 ## Project Structure
@@ -194,9 +198,14 @@ opti-moa/
 │   ├── setup.ts          # Interactive CLI setup wizard
 │   ├── server.ts         # Hono HTTP server + OpenAI proxy
 │   └── web/setup.html    # Web configuration page
-├── extras/               # Optional modules (v0.2)
+├── extras/               # Optional modules
 │   ├── mcpServer.ts      # MCP tool server endpoints
-│   └── flywheel.ts       # Data flywheel export
+│   ├── flywheel.ts       # Data flywheel export (standalone)
+│   └── adapters/         # Agent framework adapters (Glue Layer)
+│       ├── interface.ts  # Unified lifecycle hooks (ARP)
+│       ├── hermes.ts     # Hermes framework adapter
+│       ├── openclaw.ts   # OpenClaw framework adapter
+│       └── index.ts      # Adapter registry + auto-detect
 ├── test/
 │   ├── integration.test.ts  # Unit tests (16 tests, no LLM needed)
 │   └── e2e.test.ts          # End-to-end tests (real LLM calls)
@@ -227,6 +236,36 @@ npx tsx test/integration.test.ts
 # End-to-end tests (requires configured API keys, 9 tests)
 npx tsx test/e2e.test.ts
 ```
+
+## Framework Adapters (Glue Layer)
+
+opti-moa can act as a **Glue Layer** between agent frameworks. Adapters in `extras/adapters/` implement unified lifecycle hooks (ARP — Agent Runtime Protocol) to inject opti-moa's capabilities without modifying framework code.
+
+### Hermes
+
+```yaml
+# Add to ~/.hermes/config.yaml
+model:
+  default: auto
+  provider: custom
+custom_providers:
+  - name: opti-moa
+    base_url: http://127.0.0.1:8080/v1
+    api_key: "none"
+    model: auto
+```
+
+### OpenClaw
+
+```bash
+export OPENAI_BASE_URL=http://127.0.0.1:8080/v1
+export OPENAI_API_KEY=none
+export OPENAI_MODEL=auto
+```
+
+### Any OpenAI-compatible framework
+
+Point `base_url` to `http://127.0.0.1:8080/v1` — routing, memory, compression, and experience learning happen automatically server-side.
 
 ## License
 

@@ -36,7 +36,11 @@ function init(configPath: string) {
   console.log(`opti-moa ready: ${Object.keys(config.models).length} models, port ${config.port}`);
 }
 
-const SETUP_HTML = readFileSync(new URL("./web/setup.html", import.meta.url), "utf-8");
+// Dev: src/web/setup.html; Build: dist/setup.html (tsup --public-dir)
+let SETUP_HTML = "";
+for (const p of ["./web/setup.html", "./setup.html"]) {
+  try { SETUP_HTML = readFileSync(new URL(p, import.meta.url), "utf-8"); break; } catch {}
+}
 
 function needsSetup(): boolean {
   return !config || Object.keys(config.models).length === 0;
@@ -158,7 +162,7 @@ app.post("/v1/chat/completions", async (c) => {
     if (strategy?.isReliable && !hasTools) {
       modelUsed = strategy.model;
       if (strategy.committee && withinBudget()) {
-        const { text } = await runCommittee(messages);
+        const { text } = await runCommittee(messages, rs.taskType);
         usedCommittee = true;
         recordOutcome(rs.taskType, userInput, modelUsed, true, text, rs.tier, hasTools, stream);
         return c.json(makeResponse(text, modelUsed));
@@ -170,7 +174,7 @@ app.post("/v1/chat/completions", async (c) => {
     }
 
     if (trigger && withinBudget() && !hasTools) {
-      const { text } = await runCommittee(messages);
+      const { text } = await runCommittee(messages, rs.taskType);
       usedCommittee = true;
       modelUsed = config.committee.aggregator;
       recordOutcome(rs.taskType, userInput, modelUsed, true, text, rs.tier, hasTools, stream);
@@ -185,7 +189,7 @@ app.post("/v1/chat/completions", async (c) => {
     if (!hasTools && !stream && rs.tier !== "C3" && rs.committeeScore > 0.3 && rs.committeeScore < config.committee.triggerThreshold && withinBudget()) {
       const j = await judge(userInput, resultText, config.models[config.judgeModel], config.judgeConfidenceThreshold);
       if (j.shouldEscalate) {
-        const { text } = await runCommittee(messages);
+        const { text } = await runCommittee(messages, rs.taskType);
         resultText = text;
         usedCommittee = true;
         modelUsed = config.committee.aggregator;
@@ -219,9 +223,15 @@ async function runSingle(model: ModelConfig, messages: any[], body: any, stream:
   return resp.content;
 }
 
-async function runCommittee(messages: any[]) {
+async function runCommittee(messages: any[], taskType?: string) {
   moaCountToday++;
-  const members = config!.committee.members.map((n) => config!.models[n]);
+  // Dynamic member selection: use experience data if available
+  let memberNames = config!.committee.members;
+  if (taskType && experience) {
+    const best = experience.getBestMembers(taskType, Object.keys(config!.models));
+    if (best) memberNames = best;
+  }
+  const members = memberNames.map((n) => config!.models[n]).filter(Boolean);
   const aggregator = config!.models[config!.committee.aggregator];
   return executeCommittee(messages, members, aggregator, config!.committee.referenceMaxTokens);
 }
@@ -297,6 +307,15 @@ app.get("/health", (c) => c.json({ status: "ok", models: config ? Object.keys(co
 app.get("/stats", (c) => c.json(experience?.getStats() || { totalDecisions: 0 }));
 app.get("/memory", (c) => c.json(memory?.getStats() || { totalMemories: 0 }));
 app.get("/v1/models", (c) => c.json({ object: "list", data: [{ id: "auto", object: "model" }, ...(config ? Object.keys(config.models).map((n) => ({ id: n, object: "model" })) : [])] }));
+
+// Flywheel data endpoints
+app.get("/flywheel", (c) => c.json(experience?.getFlywheelStats() || { totalSamples: 0 }));
+app.get("/flywheel/export", (c) => {
+  const data = experience?.exportJsonl() || "";
+  c.header("Content-Type", "application/x-ndjson");
+  c.header("Content-Disposition", "attachment; filename=flywheel.jsonl");
+  return c.body(data);
+});
 
 // ─── Entry point ───
 export async function main() {
