@@ -1,14 +1,8 @@
-FROM node:22-slim
-
+FROM node:20-alpine
 WORKDIR /app
-
-COPY package.json tsconfig.json ./
-RUN npm install --production
-
-COPY src/ src/
-
-RUN mkdir -p /root/.opti-moa
-
+COPY package*.json ./
+RUN npm ci --production
+COPY dist/ dist/
 EXPOSE 8080
-
-CMD ["npx", "tsx", "src/server.ts"]
+VOLUME ["/root/.opti-moa"]
+ENTRYPOINT ["node", "dist/index.js"]

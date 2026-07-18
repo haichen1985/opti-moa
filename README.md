@@ -13,20 +13,28 @@
 
 ## Quick Start
 
-### Install & Configure
+### One-line Install
 
 ```bash
-npx github:haichen1985/opti-moa
+curl -fsSL https://raw.githubusercontent.com/haichen1985/opti-moa/main/install.sh | bash
+```
+
+### From Source
+
+```bash
+git clone https://github.com/haichen1985/opti-moa.git
+cd opti-moa && npm install && npm run build
+node dist/index.js   # First run opens setup wizard
+```
+
+### Docker
+
+```bash
+docker build -t opti-moa .
+docker run -d -p 8080:8080 -v ~/.opti-moa:/root/.opti-moa opti-moa
 ```
 
 Open `http://localhost:8080` → fill in your API keys → done.
-
-Or use CLI wizard:
-
-```bash
-npx github:haichen1985/opti-moa setup
-# Auto-detects Ollama and env vars, just paste API keys
-```
 
 ### Connect Your Agent
 
@@ -80,12 +88,13 @@ Your agent works exactly as before — but now it's smarter and cheaper.
 | Feature | Effect |
 |---------|--------|
 | **Smart routing** | Simple questions → cheap model, saves 60-80% cost |
-| **Conditional committee** | High-risk questions → 3 models parallel + aggregate |
+| **LLM-enhanced scoring** | Borderline cases → keyword + LLM fusion scoring |
+| **Conditional committee** | High-risk → quorum committee (2/3 members, no waiting for slowest) |
 | **Async Judge scoring** | Background quality evaluation, zero added latency |
 | **Experience learning** | Records quality scores, reuses best strategy per task type |
 | **Context compression** | Trim tool logs + summarize old messages, save tokens |
 | **Semantic memory** | Embedding-based recall of past conversations |
-| **Adaptive prompts** | System prompt scales with task complexity |
+| **Reasoning model support** | Auto-detects reasoning_content (mimo, deepseek-reasoner) |
 | **Cost control** | Daily budget + MOA limit + auto-degrade |
 
 ## vs Alternatives
@@ -104,8 +113,8 @@ Your agent works exactly as before — but now it's smarter and cheaper.
 ```
 Agent request
   ↓
-① Score input (keyword-based, zero LLM cost)
-  ↓
+① Keyword scoring (<1ms, zero LLM cost)
+  ↓ borderline? → LLM fusion scoring (30% keyword + 70% LLM)
 ② Recall relevant memory (embedding similarity)
   ↓
 ③ Compress context (trim tool logs, summarize old turns)
@@ -113,9 +122,9 @@ Agent request
 ④ Check experience (has this task type been solved well before?)
   ├── Yes → reuse best strategy → return
   └── No → score-based routing
-       ├── High risk → committee (parallel multi-model)
+       ├── High risk → quorum committee (2/3 members respond → aggregate)
        └── Normal → single model
-            → Judge checks quality
+            → Judge checks quality (background, async)
             ├── Confident → return
             └── Uncertain → escalate to committee
   ↓
@@ -173,20 +182,28 @@ opti-moa/
 ├── src/
 │   ├── index.ts          # Entry point
 │   ├── config.ts         # Config loading + env var resolution
-│   ├── scorer.ts         # 4-dimension risk scoring (pure keywords, zero LLM cost)
-│   ├── llmClient.ts      # LLM API client (fetch) + embeddings + fallback
-│   ├── judge.ts          # Answer quality judge (OptiMoa)
+│   ├── scorer.ts         # 4-dimension keyword scoring (<1ms, zero LLM cost)
+│   ├── llmScorer.ts      # LLM-enhanced scoring for borderline cases
+│   ├── llmClient.ts      # LLM API client + reasoning model support
+│   ├── judge.ts          # Answer quality judge
 │   ├── experience.ts     # Experience learning engine (SQLite)
-│   ├── moa.ts            # Multi-model committee (parallel + aggregate)
-│   ├── memory.ts         # Semantic memory (embeddings + L0-L3 layers)
+│   ├── moa.ts            # Quorum committee (2/3 members, no waiting)
+│   ├── memory.ts         # Semantic memory (embeddings + SQLite)
 │   ├── compressor.ts     # Context compression
 │   ├── cacheControl.ts   # Anthropic prompt cache injection
 │   ├── setup.ts          # Interactive CLI setup wizard
-│   ├── server.ts         # Hono HTTP server + OpenAI proxy + web config
+│   ├── server.ts         # Hono HTTP server + OpenAI proxy
 │   └── web/setup.html    # Web configuration page
+├── extras/               # Optional modules (v0.2)
+│   ├── mcpServer.ts      # MCP tool server endpoints
+│   └── flywheel.ts       # Data flywheel export
+├── test/
+│   ├── integration.test.ts  # Unit tests (16 tests, no LLM needed)
+│   └── e2e.test.ts          # End-to-end tests (real LLM calls)
+├── install.sh            # One-line install script
+├── Dockerfile
 ├── package.json
 ├── tsconfig.json
-├── Dockerfile
 ├── config.example.yaml
 └── README.md
 ```
@@ -201,11 +218,14 @@ opti-moa/
 
 Node 18+ required (uses native `fetch`).
 
-## Docker
+## Testing
 
 ```bash
-docker build -t opti-moa .
-docker run -d -p 8080:8080 -v ~/.opti-moa:/root/.opti-moa opti-moa
+# Unit tests (no LLM needed, 16 tests)
+npx tsx test/integration.test.ts
+
+# End-to-end tests (requires configured API keys, 9 tests)
+npx tsx test/e2e.test.ts
 ```
 
 ## License

@@ -14,14 +14,11 @@ import { executeCommittee } from "./moa.js";
 import { compressContext } from "./compressor.js";
 import { applyCacheControl } from "./cacheControl.js";
 import { chat, chatRaw, chatStream } from "./llmClient.js";
-import { createMcpServer } from "./mcpServer.js";
-import { FlywheelCollector } from "./flywheel.js";
 import { stream as honoStream } from "hono/streaming";
 
 let config: AppConfig | null = null;
 let experience: ExperienceEngine | null = null;
 let memory: SemanticMemory | null = null;
-let flywheel: FlywheelCollector | null = null;
 let moaCountToday = 0;
 let moaCountDate = new Date().toDateString();
 const app = new Hono();
@@ -29,7 +26,6 @@ const app = new Hono();
 function init(configPath: string) {
   config = loadConfig(configPath);
   experience = new ExperienceEngine(config.experienceDbPath);
-  flywheel = new FlywheelCollector(config.experienceDbPath);
   const cheap = config.models[config.tiers.C0 || "cheap"];
   if (cheap) {
     memory = new SemanticMemory(
@@ -37,8 +33,6 @@ function init(configPath: string) {
       cheap.baseUrl, cheap.apiKey
     );
   }
-  // Mount MCP tool server
-  app.route("/mcp", createMcpServer(config));
   console.log(`opti-moa ready: ${Object.keys(config.models).length} models, port ${config.port}`);
 }
 
@@ -303,15 +297,6 @@ app.get("/health", (c) => c.json({ status: "ok", models: config ? Object.keys(co
 app.get("/stats", (c) => c.json(experience?.getStats() || { totalDecisions: 0 }));
 app.get("/memory", (c) => c.json(memory?.getStats() || { totalMemories: 0 }));
 app.get("/v1/models", (c) => c.json({ object: "list", data: [{ id: "auto", object: "model" }, ...(config ? Object.keys(config.models).map((n) => ({ id: n, object: "model" })) : [])] }));
-
-// Flywheel data export
-app.get("/flywheel/stats", (c) => c.json(flywheel?.getStats() || { totalSamples: 0 }));
-app.get("/flywheel/export", (c) => {
-  const format = c.req.query("format") || "jsonl";
-  const outPath = join(homedir(), ".opti-moa", `flywheel-export.${format === "csv" ? "csv" : "jsonl"}`);
-  const count = format === "csv" ? flywheel?.exportCsv(outPath) : flywheel?.exportJsonl(outPath);
-  return c.json({ exported: count || 0, path: outPath });
-});
 
 // ─── Entry point ───
 export async function main() {

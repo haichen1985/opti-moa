@@ -77,6 +77,8 @@ export async function chat(
   if (choices.length) {
     const msg = choices[0].message || {};
     content = msg.content || "";
+    // Reasoning models (e.g. mimo, deepseek-reasoner) may put output in reasoning_content
+    if (!content && msg.reasoning_content) content = msg.reasoning_content;
   }
   const usage = data.usage || {};
   return {
@@ -137,6 +139,7 @@ export async function chatStream(
         const data = JSON.parse(line.slice(6));
         const delta = data.choices?.[0]?.delta;
         if (delta?.content) parts.push(delta.content);
+        else if (delta?.reasoning_content) parts.push(delta.reasoning_content);
       } catch {}
     }
   }

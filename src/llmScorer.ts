@@ -11,15 +11,19 @@ export interface LLMScore {
   reasoning: string;
 }
 
-const PROMPT = `Analyze this input and classify for model routing. Respond with ONLY JSON (no markdown):
-{"complexity": 0-1, "risk": 0-1, "uncertainty": 0-1, "multi_view": 0-1, "task_type": "coding|translation|summarization|architecture|research|writing|math|legal|medical|general", "reasoning": "one sentence"}
+const PROMPT = `Classify this input for model routing. Output ONLY a JSON object, no explanation, no thinking:
+{"complexity":0.5,"risk":0.3,"uncertainty":0.3,"multi_view":0.5,"task_type":"general","reasoning":"brief"}
 
-Input: {input}`;
+Input: {input}
+
+JSON:`;
 
 export async function llmClassify(input: string, model: ModelConfig, timeout = 15): Promise<LLMScore | null> {
   try {
-    const resp = await chat(model, [{ role: "user", content: PROMPT.replace("{input}", input.slice(0, 3000)) }], { temperature: 0, maxTokens: 200 });
-    const m = resp.content.match(/\{[^}]+\}/s);
+    const resp = await chat(model, [{ role: "user", content: PROMPT.replace("{input}", input.slice(0, 3000)) }], { temperature: 0, maxTokens: 2000 });
+    // Match the LAST JSON object with numeric complexity value (skip prompt template)
+    const matches = [...resp.content.matchAll(/\{[^{}]*"complexity"\s*:\s*[\d.]+[^{}]*\}/gs)];
+    const m = matches.length ? matches[matches.length - 1] : null;
     if (!m) return null;
     const d = JSON.parse(m[0]);
     return {
